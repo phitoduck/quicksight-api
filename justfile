@@ -1,5 +1,19 @@
+AWS_PROFILE := "ben-ai-sandbox"
+
 install:
     python -m pip install -e .[dev]
+
+invalidate-s3-cache:
+	python ./iac/aws_invalidate_stack.py \
+		--s3-static-site-stack-name "quicksight-static-site" \
+		--region "us-east-2" \
+		--profile {{AWS_PROFILE}}
+
+# after running 'make html' or 'make docs-docker', run this to
+# upload the docs to S3 and incalidate the CloudFront cache so that
+# users can access the new in the browser
+publish-to-s3: invalidate-s3-cache
+	aws s3 sync ./src/quicksight_poc/static/ s3://quicksight.ben-ai-sandbox.com/ --acl public-read --profile {{AWS_PROFILE}}
 
 update-pyscaffold:
     #!/bin/bash

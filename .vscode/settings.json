@@ -1,0 +1,43 @@
+/*
+ * Extensions:
+    Name            ID                         Purpose
+    just            skellock.just              Syntax highlighting in the justfile
+    autoDocstring   njpwerner.autodocstring    Autogenerate docstrings for python functions
+ */
+{
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    // enable pylint
+    "python.linting.pylintEnabled": true,
+    "python.linting.pylintPath": "pylint",
+    "python.linting.pylintArgs": [
+        "--rcfile=./code-quality/.pylintrc"
+    ],
+    // enable flake8
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Path": "flake8",
+    "python.linting.flake8Args": [
+        "--config=./code-quality/.flake8"
+    ],
+    // enable black formatting on save
+    "editor.formatOnSave": true,
+    "python.formatting.provider": "black",
+    "python.formatting.blackPath": "black",
+    // enable isort to automatically organize imports on save
+    "python.sortImports.path": "isort",
+    "python.sortImports.args": [
+        "--settings-file=./code-quality/.isort.cfg"
+    ],
+    // "editor.codeActionsOnSave": {
+    //     "source.organizeImports": true
+    // },
+    // configure which syntax highlighter to use for various files
+    "files.associations": {
+        // prevent warnings on this file for having comments
+        "settings.json": "jsonc",
+        "template.settings.json": "jsonc",
+        "*.flake8": "ini",
+        "*.cfg": "ini",
+        "*.pylintrc": "ini",
+        "justfile": "just"
+    }
+}

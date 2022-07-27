@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8"/>
+    <style>
+      #DisplayParent
+      {
+        height: calc(100vh - 76px);
+        width: 100vw;
+        position: absolute;
+        top:76px;
+        background-color:#e9ecef;
+        overflow:hidden;
+      }
+      .HideQ #DashboardContainer, .HideQ #DisplayMessageContainer, #SessionContainer
+      {
+        height: calc(100vh - 76px);
+        width: 100vw;
+        position: absolute;
+        top:0px;
+        background-color:#e9ecef;
+        overflow:hidden;
+      }
+      .HideQ #QContainer
+      {
+        height:40px;
+        width:calc( 100vw - 100px );
+        position:absolute;
+        top:2px;
+        left:50px;
+        overflow:visible;
+        visibility:hidden;
+      }
+      
+      .ShowQ #DashboardContainer, .ShowQ #DisplayMessageContainer
+      {
+        height: calc(100vh - 76px - 40px);
+        width: 100vw;
+        position: absolute;
+        top:40px;
+        background-color:#e9ecef;
+        overflow:hidden;
+      }
+      .ShowQ #QContainer
+      {
+        height:40px;
+        width:calc( 100vw - 100px );
+        position:absolute;
+        top:2px;
+        left:50px;
+        overflow:visible;
+      }
+      #QBackdrop
+      {
+        position:absolute;
+        top:0px;
+        left:0px;
+        height:calc( 100vh - 76px );
+        width:100vw;
+        overflow:hidden;
+        background-color:#000000;
+        opacity: 0.5;
+      }
+      
+      iframe {border: 0;}
+      body {margin:0;}
+    </style>
+    <script src="https://unpkg.com/amazon-quicksight-embedding-sdk@1.18.0/dist/quicksight-embedding-js-sdk.min.js"></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=yes">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js" ></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha384-OgVRvuATP1z7JjHLkuOU7Xw704+h835Lr+6QL9UvYjZE3Ipu6Tp75j7Bh/kR0JKI" crossorigin="anonymous"></script>
+  
+    <script>
+      //The placeholders in this section is filled from lambda python code.
+      //This HTML page is written to be a static single page application. Filling in the values dynamically just for ease of demo setup.
+      //If you put this file on a static web server (say S3, S3 + CloudFront), you can fill in the place holders. 
+      //In that case, Ensure that staticPageUrl is set to the static url of this page.
+      var awsData = {
+          apiGatewayUrl:'<apiGatewayUrl>',
+          staticPageUrl:'<apiGatewayUrl>',
+          cognitoDomainUrl:'<cognitoDomainUrl>',
+          cognitoClientId:'<cognitoClientId>',
+          dashboardInitialLoad:true,
+          dashboard:'',
+          session:'',
+          qSearchBar:'',
+          timerId:'',
+          debugMode: false
+      };
+      
+      $(document).ready(function () {
+        //Specify whether Q bar has to be displayed or not. This value flows in from lambda layer.
+        $('#DisplayParent').addClass('<qDisplaySelection>');
+        
+        //Once the page loads, invoke getOpenIdToken function.
+        getOpenIdToken();
+      });
+  
+      //Redirect to Cognito if user is not Signed in.
+      //Cognito will redirect back to this page once user signs in.
+      //If hosting on static web server, ensure that the static page url is configured in Cognito as Callback and SignOut urls.
+      //Once token is available, proceed on to getting QuickSight info.
+    	function getOpenIdToken(){
+      		writeDebugInfo('In getOpenIdToken func');
+      		//Check for token in url as well as in Cookie
+      		var idToken = getParameterValues('id_token','#','&') ?? getCookieField('openIdToken');
+      		writeDebugInfo(idToken)
+      		if (idToken ) {
+            writeDebugInfo('Token found');
+            //Remove the url fragment with token details. This will be stored into a local cookie.
+            window.location.hash='';
+            getQuickSightInfo(idToken);
+            
+      		}
+      		else {
+      			writeDebugInfo('Token not found, Redirecting to Cognito');
+      			window.location.href = awsData.cognitoDomainUrl+'/login?client_id='+awsData.cognitoClientId+'&response_type=token&scope=openid+profile&redirect_uri='+awsData.staticPageUrl;
+      		}
+    	}
+  
+      //If awsData.debugMode is set to true, this function logs messages to console.
+      function writeDebugInfo(debugInfo){
+        if (awsData.debugMode)
+        {
+          console.log(debugInfo);
+        }
+      }
+  
+      //Function used to extract parts of the url.
+      //Extracted parts are stored as cookies and value retrieved from cookie on subsequent calls.
+      function getParameterValues(param,slicer,delimiter) {
+        writeDebugInfo('In getParameterValues func');
+        var urlParms = window.location.href.slice(window.location.href.indexOf(slicer)+ slicer.length).split(delimiter);
+        for (var i = 0; i < urlParms.length; i++) {
+          var urlparm = urlParms[i].split('=');
+          if (urlparm[0].toLowerCase() === param) {
+            return decodeURIComponent(urlparm[1]);
+          }
+        }
+        return
+      }
+      
+      //Return value stored in cookie. If cookie is not found, null is returned.
+      function getCookie(name) {
+        writeDebugInfo('In getCookie func');
+        var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+        return v ? v[2] : null;
+      }
+  
+      //Sets cookies with an expiry of 1 hour.
+    	function setCookie(name, value) {
+        writeDebugInfo('In setCookie func');
+        document.cookie = name + "=" + value +"; Max-Age=3600; SameSite=Strict";
+      }
+  
+      function getCookieField(fieldName) {
+        writeDebugInfo('In getCookieField function');
+        cookie = getCookie('QSEmbedDemo');
+        if (cookie)
+        {
+          fieldValue = JSON.parse(cookie)[fieldName];
+          return fieldValue
+        }
+        else
+        {
+          signOut();
+        }
+      }  
+      //Make APIGateway calls to retrieve info from QuickSight.
+      function getQuickSightInfo(openIdToken) {
+        writeDebugInfo('In getQuickSightInfo func');
+        const parameters = {
+            openIdToken: openIdToken,
+            timestamp: new Date().getTime()  //Timestamp added just to ensure that browsers don't use cached response.
+        };
+  
+        const myQueryString = $.param(parameters);
+   
+        //Retrieve list of dashboards that the user can access from QuickSight.
+        $.ajax({
+              url: awsData.apiGatewayUrl + '?mode=getDashboardList&' + myQueryString,
+              contentType: "text/plain",
+              dataType: 'json',
+              success: function(result){
+                  writeDebugInfo(result.Dashboards);
+                  loadDashboardList(result.Dashboards);
+                  //In addition to dashboard list, we get back the token and expirty timestamp in the response. These are stored as a cookie
+                  setCookie('QSEmbedDemo','{"openIdToken":"'+result.openIdToken+'", "expiryTs":'+result.expiryTs+'}',parseInt(result.expiryTs - Date.now()/1000));
+                  //Check to make sure session is not expired and set up a timer to call this function every minute.
+                  checkSessionDuration();
+                  awsData.timerId = setInterval(function(){checkSessionDuration();},60000);
+              },
+              error: function(err){
+                  console.log('Error on making API gateway call to retrieve Dashboard list..');
+                  console.log(err.responseText);
+                  $('#DisplayMessage').html(err.responseText.replaceAll('"',''));
+                }
+              });      
+  
+        //Retrieve a dynamic dashboard embed url from QuickSight.
+        //This is generated for a non existent dashboard id as this call is made in parallel to retrieving the dashboard list.
+        $.ajax({
+              url: awsData.apiGatewayUrl + '?mode=getUrl&urlType=dashboard&' + myQueryString,
+              contentType: "text/plain",
+              dataType: 'json',
+              success: function(result){
+                  writeDebugInfo(result);
+                  //------------
+                  //Embedding the url to non-existent dashboard will result in an error screen in the div.
+                  //However, on initial load, this div is hidden underneath status message screens.
+                  //When user picks a dashboard from drop down, NavigateToDashboard function will load it (without generating another url)
+                  //and then this div will be brought up to display layer.
+                  //This is done to ensure that dashboard loads as quickly as possible once user makes a selection.
+                  //-------------
+                  //Alternatively, you can choose to generate the url and hold off on embedding till user selects a dashboard.
+                  //In that case, you have to replace the string 'non-existent-id' in embed url with actual dashboard id.
+                  //Also, an embed url has to be redeemed within 5 mins. 
+                  //So, if following delyaed load approach, you got generate fresh urls based on a timer till one gets embedded.
+                  //OR you can choose to generate the url when user selects the initial dashboard.
+                  //-------------
+                  embedQuickSight('Dashboard', 'DashboardContainer',result.DashboardEmbedUrl);
+              },
+              error: function(err){
+                  console.log('Error on making API gateway call to retrieve dashboard embed url.');
+                  console.log(err.responseText);
+                  $('#DisplayMessage').html(err.responseText.replaceAll('"',''));
+                }
+              });
+
+        //Retrieve a dynamic session embed url from QuickSight.
+        $.ajax({
+              url: awsData.apiGatewayUrl + '?mode=getUrl&urlType=session&' + myQueryString,
+              contentType: "text/plain",
+              dataType: 'json',
+              success: function(result){
+                  writeDebugInfo(result);
+                  embedQuickSight('Session', 'SessionContainer',result.SessionEmbedUrl);
+              },
+              error: function(err){
+                  console.log('Error on making API gateway call to retrieve session embed url.');
+                  console.log(err.responseText);
+                  $('#DisplayMessage').html(err.responseText.replaceAll('"',''));
+                }
+              });
+        
+        //Retrieve Q embed url if configured.
+        if( $('#DisplayParent').hasClass('ShowQ') ) 
+        {
+          $.ajax({
+              url: awsData.apiGatewayUrl + '?mode=getUrl&urlType=q&' + myQueryString,
+              contentType: "text/plain",
+              dataType: 'json',
+              success: function(result){
+                  writeDebugInfo(result);
+                  embedQuickSight('Q', 'QContainer',result.QEmbedUrl);
+              },
+              error: function(err){
+                  console.log('Error on making API gateway call to retrieve Q embed url.');
+                  console.log(err.responseText);
+                  $('#DisplayMessage').html(err.responseText.replaceAll('"',''));
+                }
+              });          
+        }      
+              
+      }
+  
+      //Embed the generated url into the div identified to hold the dashboard/session.
+      function embedQuickSight(entity, embedDiv, embedUrl) {
+        writeDebugInfo('In embedQuickSight func');
+        var containerDiv = document.getElementById(embedDiv);
+
+        
+        if (entity == 'Dashboard'){
+          var params = {
+            url: embedUrl,
+            container: containerDiv,
+            width:"100%",
+            height:"100%",
+            undoRedoDisabled: true, 
+            resetDisabled: true
+          };
+          awsData.dashboard = QuickSightEmbedding.embedDashboard(params);
+        }
+        else if (entity == 'Session'){
+          var params = {
+            url: embedUrl,
+            container: containerDiv,
+            width:"100%",
+            height:"100%"
+          };
+          awsData.session = QuickSightEmbedding.embedSession(params);
+        }
+        else {
+          var params = {
+            url: embedUrl,
+            container: containerDiv,
+            height:"100%",
+            width:"100%",
+            qSearchBarOptions: {
+                        expandCallback: QExpandCallback,
+                        collapseCallback: QCollapseCallback
+                    }
+          };
+          awsData.qSearchBar = QuickSightEmbedding.embedQSearchBar(params);
+        }
+      }
+      //Make backdrop visible to dim the background while Q is active.
+      function QExpandCallback()
+      {
+        $('#QBackdrop').css('visibility','visible');
+      }
+      //Hide backdrop once focus is shifted away from Q.
+      function QCollapseCallback()
+      {
+        $('#QBackdrop').css('visibility','hidden');
+      }
+      //Load the drop down list with dashboards that the user can access.
+      //Show message to select a dashboard once the list is loaded.
+      //Try sharing more dashboards with the user or EmbeddedReaderGrp and see them show up in the drop down on page refresh.
+      function loadDashboardList(Dashboards)
+      {
+        writeDebugInfo('In loadDashboardList func');
+        //Clear & load drop down list
+        $('#selectDashboard').empty();
+        $('#selectDashboard').append($('<option></option>').val('non-existent-id').html(' '));
+        $.each(Dashboards, function(index, dashboard) {
+          $('#selectDashboard').append($('<option></option>').val(dashboard.DashboardId).html(dashboard.Name));
+        });
+        if (Dashboards.length > 0)
+        {
+           $('#DisplayMessage').html('Please select a dashboard to view.');
+        }
+        else
+        {
+          $('#DisplayMessage').html('Share a dashboard with this user or relevant EmbeddedDemoReaders group in QuickSight. <br> Then, try refreshing this page.');
+        }
+  
+      }
+      
+      //Bring the dashboard div to top layer when invoked with show action and vice versa for hide.
+      //Also, remove the empty placeholder from the dashboard selection drop down on initial invocation.
+      function setVisibility(mode){
+        writeDebugInfo('In setVisibility func : mode is '+mode);
+        
+        if (awsData.dashboardInitialLoad && mode == 'SelectDashboard')
+        {
+          $('#selectDashboard option[value="non-existent-id"]').remove();
+          awsData.dashboardInitialLoad = false;
+          mode = 'Dashboard'
+        }
+        
+        if ( mode == 'Dashboard' && awsData.dashboardInitialLoad)
+        {
+          mode = 'UninitializedDashboard';
+        }
+        else if(mode == 'Dashboard' && !awsData.dashboardInitialLoad)
+        {
+          mode = 'InitializedDashboard'
+        }
+        
+        writeDebugInfo('Derived mode is '+mode);
+        switch(mode){
+          case 'UninitializedDashboard':
+            $('#DisplayMessageContainer').css('visibility','visible');
+            $('#DashboardContainer').css('visibility','hidden');
+            $('#SessionContainer').css('visibility','hidden');
+            $('#NavEmbeddedDashboards').removeClass('text-secondary').addClass('text-primary');
+            $('#NavEmbeddedSession').removeClass('text-primary').addClass('text-secondary');
+            $('#DashboardSelector').css('visibility','visible');
+            $('#DashboardSelectorHeader').css('visibility','visible');
+            break;
+          case 'InitializedDashboard':
+            $('#DisplayMessageContainer').css('visibility','hidden');
+            $('#DashboardContainer').css('visibility','visible');
+            $('#SessionContainer').css('visibility','hidden');
+            $('#NavEmbeddedDashboards').removeClass('text-secondary').addClass('text-primary');
+            $('#NavEmbeddedSession').removeClass('text-primary').addClass('text-secondary');
+            $('#DashboardSelector').css('visibility','visible');
+            $('#DashboardSelectorHeader').css('visibility','visible');
+            break;
+          case 'Session':
+            $('#DisplayMessageContainer').css('visibility','hidden');
+            $('#DashboardContainer').css('visibility','hidden');
+            $('#SessionContainer').css('visibility','visible');
+            $('#NavEmbeddedDashboards').removeClass('text-primary').addClass('text-secondary');
+            $('#NavEmbeddedSession').removeClass('text-secondary').addClass('text-primary');
+            $('#DashboardSelector').css('visibility','hidden');
+            $('#DashboardSelectorHeader').css('visibility','hidden');
+            break;
+            
+          default:
+            $('#DisplayMessageContainer').css('visibility','visible');
+            $('#DashboardContainer').css('visibility','hidden');
+            $('#SessionContainer').css('visibility','hidden');
+            $('#NavEmbeddedDashboards').removeClass('text-primary').addClass('text-secondary');
+            $('#NavEmbeddedSession').removeClass('text-primary').addClass('text-secondary');
+            $('#DashboardSelector').css('visibility','visible');
+            $('#DashboardSelectorHeader').css('visibility','visible');
+            break;
+          
+        }
+        
+      }
+      
+      //Load selected dashboard using the navigateToDashboard function.
+      //On initial invocation, add a 1 sec delay to the dashboard div being brought to top layer to avoid showing error screen.
+      //(ie the error stating that dashboard non-existent-id doesn't exist. See comments further above for more details.)
+      function selectDashboard(dashboardId){
+        writeDebugInfo('In selectDashboard func');
+        if (dashboardId != 'non-existent-id')
+        {
+          var options = {
+                dashboardId: dashboardId
+            };
+          awsData.dashboard.navigateToDashboard(options);
+          if (awsData.dashboardInitialLoad)
+          {
+            setTimeout(function(){setVisibility('SelectDashboard');}, 1000);
+          }
+        }
+      }
+  
+      function checkSessionDuration(){
+        writeDebugInfo('In checkSessionDuration function');
+        expiryTs = getCookieField('expiryTs')
+        if (expiryTs)
+        {
+          sessionDuration = parseInt((expiryTs - (Date.now()/1000) )/60 );
+          sessionDuration = sessionDuration >= 0 ? sessionDuration : 0 ;
+          
+          if (sessionDuration == 0)
+          {
+            signOut();
+          }
+        }
+        else
+        {
+          signOut();
+        }
+        
+      }
+      
+      //Signout of the current Cognito session.
+      function signOut(){
+        writeDebugInfo('In signOut Function');
+        setCookie('QSEmbedDemo', '');
+        clearInterval(awsData.timerId);
+        window.location.href = awsData.cognitoDomainUrl+'/logout?client_id='+awsData.cognitoClientId+'&logout_uri='+awsData.staticPageUrl;
+      }
+        
+    </script>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light fixed-top" >
+      <a class="navbar-brand" >
+        <img id="navbarLogo" src="data:image/png;base64,<LogoFileBase64>" height="50px" alt="" loading="lazy">
+      </a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul id = "NavViewSelection" class="navbar-nav ml-auto">
+          <li class="nav-item active">
+            <a id="NavEmbeddedSession" class="nav-link text-secondary " href="#" style="" onclick="setVisibility('Session')">Embedded Session View</a>
+          </li>
+          <li class="nav-item active">
+            <a id="NavEmbeddedDashboards" class="nav-link text-primary " href="#" style="" onclick="setVisibility('Dashboard')">Embedded Dashboard View</a>
+          </li>
+        </ul>
+        
+        <ul id="NavDashboards" class="navbar-nav" style="margin-right:40px; ">
+          <li id="DashboardSelectorHeader" class="nav-item inactive">
+            <a class="nav-link text-secondary "> Select Dashboard </a>
+          </li>
+          <li id="DashboardSelector" class="nav-item active" style="margin-right:40px">
+            <select class="form-control text-secondary" id="selectDashboard" style="width:200px;" onchange="selectDashboard($(this).val())")>
+            </select>
+          </li>
+          <li class="nav-item active">
+              <a id ="NavSignOut" class="nav-link text-secondary" href="#" onclick="signOut()">LogOut</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    
+    <div id="DisplayParent" >
+      <div id="DashboardContainer" style="visibility:hidden">
+      </div>
+      <div id="DisplayMessageContainer" class="overflow-auto" style="visibility:visible">
+        <div class="jumbotron jumbotron-fluid col text-center" >
+          <div class="container" >
+            <h4 id="DisplayMessage" class="text-secondary">Loading..</h4>
+          </div>
+        </div>
+      </div>
+      <div id="SessionContainer" style="visibility:hidden">
+      </div>
+      <div id="QBackdrop" style="visibility:hidden"></div>
+      <div id="QContainer"></div>
+    </div>
+  </body>
+</html>

@@ -1,3 +1,14 @@
+I tried to follow this youtube tutorial:
+
+- https://www.youtube.com/watch?v=nz5l_7P1MMM&ab_channel=AmazonQuickSight
+
+Which is apparently an older version of this workshop:
+
+https://catalog.workshops.aws/quicksight/en-US/user-based-embedding/3-embedding-framework/1-cognito-userpool
+
+
+
+
 .. These are examples of badges you might want to add to your README:
    please update the URLs accordingly
 

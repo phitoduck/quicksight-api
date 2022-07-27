@@ -1,0 +1,8 @@
+AwsAccountId :
+CognitoUserPoolId :
+CognitoClientId :
+CognitoDomainUrl :
+RoleArn :
+DashboardRegion :
+APIGatewayUrl :
+AWS_DATA_PATH : .
