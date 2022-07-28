@@ -6,7 +6,7 @@ Which is apparently an older version of this workshop:
 
 https://catalog.workshops.aws/quicksight/en-US/user-based-embedding/3-embedding-framework/1-cognito-userpool
 
-
+I ended up getting 
 
 
 .. These are examples of badges you might want to add to your README:
