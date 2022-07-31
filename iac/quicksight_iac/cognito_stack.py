@@ -3,6 +3,10 @@ from constructs import Construct
 from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_iam as iam
 
+from aws_cdk import aws_certificatemanager as acm
+from aws_cdk import aws_route53 as route53
+from aws_cdk import aws_route53_targets as route53_targets
+
 
 class CognitoStack(Stack):
     def __init__(
@@ -10,7 +14,9 @@ class CognitoStack(Stack):
         scope: Construct,
         construct_id: str,
         embed_sample_route_url: str,
-        frontend_domain: str,
+        # frontend_domain: str,
+        top_level_auth_domain: str,
+        auth_subdomain: str,
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -37,6 +43,12 @@ class CognitoStack(Stack):
             ),
         )
 
+        self.user_pool_domain = self.add_custom_domain(
+            subdomain=auth_subdomain,
+            top_level_domain=top_level_auth_domain,
+            user_pool=self.user_pool,
+        )
+
         self.app_client: cognito.UserPoolClient = self.user_pool.add_client(
             "web-app-client",
             auth_flows=cognito.AuthFlow(
@@ -53,13 +65,6 @@ class CognitoStack(Stack):
                 scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
                 callback_urls=[embed_sample_route_url],
                 logout_urls=[embed_sample_route_url],
-            ),
-        )
-
-        self.user_pool_domain: cognito.UserPoolDomain = self.user_pool.add_domain(
-            "user-pool-domain",
-            cognito_domain=cognito.CognitoDomainOptions(
-                domain_prefix="quicksight-poc-eric"
             ),
         )
 
@@ -117,14 +122,15 @@ class CognitoStack(Stack):
             )
         )
 
+
         # this output is here to preserve a dependency problem
-        CfnOutput(
-            scope=self,
-            id="static-site-index-page-url",
-            value="https://" + frontend_domain + "/index.html",
-            description="Url to the index page of the static site in S3",
-            export_name="index-page-url-static-site",
-        )
+        # CfnOutput(
+        #     scope=self,
+        #     id="static-site-index-page-url",
+        #     value="https://" + frontend_domain + "/index.html",
+        #     description="Url to the index page of the static site in S3",
+        #     export_name="index-page-url-static-site",
+        # )
         CfnOutput(
             scope=self,
             id="user-pool-id",
@@ -155,3 +161,56 @@ class CognitoStack(Stack):
             description="Sign in URL of the Hosted UI.",
             export_name="hosted-ui-signin-url",
         )
+
+    def add_custom_domain(self, subdomain: str, top_level_domain: str, user_pool: cognito.UserPool):
+        """
+        Note: you need a valid A Record to create a custom domain, but you can't create a custom
+        domain without a valid A Record. This resulted in a horrible circular dependency that made
+        me think it wasn't worth it to have a pretty URL on the login page.
+
+        Someone came up with a solution using a custom resource here:
+        https://github.com/aws/aws-cdk/issues/6787#issuecomment-601432895
+
+        We can revisit the above link if we really want to get this to work.
+        """
+
+        subdomain = f"{subdomain}.{top_level_domain}"
+
+        # top_level_hosted_zone = route53.HostedZone.from_lookup(
+        #     self, id="cognito-parent-domain-hosted-zone", domain_name=top_level_domain
+        # )
+
+        # cert = acm.DnsValidatedCertificate(
+        #     self,
+        #     id="dns-validated-cert",
+        #     domain_name=subdomain,
+        #     hosted_zone=top_level_hosted_zone,
+        #     region=self.region,
+        # )
+
+        user_pool_domain: cognito.UserPoolDomain = self.user_pool.add_domain(
+            "user-pool-domain",
+            cognito_domain=cognito.CognitoDomainOptions(
+                domain_prefix="quicksight-poc-eric"
+            ),
+            # custom_domain=cognito.CustomDomainOptions(
+            #     domain_name=subdomain,
+            #     certificate=cert,
+            # )
+        )
+
+        # subdomain_a_record = route53.ARecord(
+        #     self,
+        #     id="apigw-subdomain-a-record",
+        #     record_name=subdomain,
+        #     target=route53.RecordTarget.from_alias(
+        #         route53.AliasRecordTargetConfig(
+        #             dns_name=subdomain,
+        #         )
+        #     ),
+        #     zone=top_level_hosted_zone,
+        # )
+
+        # user_pool_domain.node.add_dependency(subdomain_a_record)
+
+        return user_pool_domain

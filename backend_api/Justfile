@@ -1,0 +1,5 @@
+run:
+    API__COGNITO_AWS_REGION=us-east-2 \
+    API__COGNITO_USER_POOL_ID=us-east-2_T5XqAEdE9 \
+    API__COGNITO_WEB_CLIENT_ID=5rk2fambn4e4td5els32ho99gt \
+        python -m quicksight_api.main.main

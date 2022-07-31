@@ -1,1 +1,6 @@
-{}
+{
+  "hosted-zone:account=093262366795:domainName=ben-de-sandbox.com:region=us-east-2": {
+    "Id": "/hostedzone/Z05719223S6MI8WWFJ0BQ",
+    "Name": "ben-de-sandbox.com."
+  }
+}

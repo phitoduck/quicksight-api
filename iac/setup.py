@@ -6,15 +6,16 @@ setuptools.setup(
     description="An empty CDK Python app",
     # long_description=long_description,
     long_description_content_type="text/markdown",
-    author="rootski-io",
+    author="Eric Riddoch",
     package_dir={"": "."},
-    packages=setuptools.find_packages(include=["lightsail", "lightsail-dependencies"]),
+    packages=setuptools.find_packages(),
     install_requires=[
         "aws-cdk-lib==2.27.0",
         "constructs>=10.0.0,<11.0.0",
         "aws-cdk.aws-apigatewayv2-alpha==2.27.0a0",
         "aws-cdk.aws-apigatewayv2-integrations-alpha==2.27.0a0",
         "aws-cdk.aws_apigatewayv2_authorizers_alpha==2.27.0a0",
+        "aws-cdk.aws_glue_alpha==2.27.0a0",
     ],
     python_requires=">=3.6",
     classifiers=[

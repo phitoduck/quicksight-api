@@ -11,13 +11,11 @@ To run this API with ``gunicorn``, use the following command:
 from pathlib import Path
 from typing import Optional
 
+import uvicorn
+
 from fastapi import FastAPI
 from quicksight_api.config.config import Config
-from quicksight_api.main.endpoints.breakdown.routes import router as breakdown_router
-from quicksight_api.main.endpoints.graphql import router as graphql_router
-from quicksight_api.main.endpoints.morpheme import router as morpheme_router
-from quicksight_api.main.endpoints.search import router as search_router
-from quicksight_api.main.endpoints.word import router as word_router
+from quicksight_api.main.endpoints.first import router as first_router
 from quicksight_api.schemas.core import Services
 from quicksight_api.services.auth import AuthService
 from quicksight_api.services.database import DBService
@@ -33,7 +31,7 @@ def create_app(
     if not config:
         config = Config()
 
-    app = FastAPI(title="Rootski API")
+    app = FastAPI(title="API")
     app.state.config: Config = config
     app.state.services = Services(
         auth=AuthService.from_config(config=config),
@@ -41,31 +39,8 @@ def create_app(
         logger=LoggingService.from_config(config=config),
     )
 
-    # configure startup behavior: initialize services on startup
-    @app.on_event("startup")
-    async def on_startup():
-        services: Services = app.state.services
-
-        logging_service: LoggingService = services.logger
-        auth_service: AuthService = services.auth
-        db_service: DBService = services.db
-        dynamo_service: DynamoDBService = services.dynamo
-
-        # logging should be initialized first since it alters a global logger variable
-        logging_service.init()
-        auth_service.init()
-        db_service.init()
-        dynamo_service.init()
-
-        # # ensure that the static assets dir exists (for morphemes.json)
-        Path(config.static_assets_dir).mkdir(exist_ok=True, parents=True)
-
     # add routes
-    app.include_router(breakdown_router, tags=["Breakdowns"])
-    app.include_router(search_router, tags=["Words"])
-    app.include_router(word_router, tags=["Words"])
-    app.include_router(morpheme_router, tags=["Morphemes"])
-    app.include_router(graphql_router, tags=["GraphQL"])
+    app.include_router(first_router, tags=["First"])
 
     # add authorized CORS origins (add these origins to response headers to
     # enable frontends at these origins to receive requests from this API)
@@ -80,12 +55,27 @@ def create_app(
     return app
 
 
+# configure startup behavior: initialize services on startup
+def initialize_app(app: FastAPI):
+    services: Services = app.state.services
+
+    logging_service: LoggingService = services.logger
+    auth_service: AuthService = services.auth
+    db_service: DBService = services.db
+
+    # logging should be initialized first since it alters a global logger variable
+    logging_service.init()
+    # auth_service.init()
+    db_service.init()
+
+
 def create_default_app():
     config = Config()
     return create_app(config=config)
 
 
 if __name__ == "__main__":
-    config = Config()
-    app = create_app(config=config)
+    app = create_app()
+    config: Config = app.state.config
+    initialize_app(app)
     uvicorn.run(app, host=config.host, port=config.port)

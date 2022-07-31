@@ -9,6 +9,16 @@ invalidate-s3-cache:
 		--region "us-east-2" \
 		--profile {{AWS_PROFILE}}
 
+# NOTE: quicksight-glue requires the maven jars to be present in this project
+deploy-cdk:
+    cd ./iac/ \
+        && cdk deploy --profile ben-ai-sandbox --all --require-approval never
+
+# NOTE: quicksight-glue requires the maven jars to be present in this project
+deploy-glue:
+    cd ./iac/ \
+        && cdk deploy --profile ben-ai-sandbox "quicksight-glue" --require-approval never
+
 # after running 'make html' or 'make docs-docker', run this to
 # upload the docs to S3 and incalidate the CloudFront cache so that
 # users can access the new in the browser

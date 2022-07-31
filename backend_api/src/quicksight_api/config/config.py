@@ -21,14 +21,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
-import yaml
 from pydantic import AnyHttpUrl, BaseSettings, validator
 from pydantic.dataclasses import dataclass
 from pydantic.env_settings import SettingsSourceCallable
 from quicksight_api.config.ssm import get_ssm_parameters_by_prefix
 
 ANON_USER = "anon@rootski.io"
-ENVIRON_PREFIX: str = "ROOTSKI__"
+ENVIRON_PREFIX: str = "API__"
 
 # default config values
 
@@ -41,7 +40,7 @@ DEFAULT_DOMAIN: str = "www.rootski.io"
 #: default http:// URL of the S3 bucket containing the static frontend files
 DEFAULT_S3_STATIC_SITE_DOMAIN = "http://io.rootski.www.s3-website-us-west-2.amazonaws.com"
 #: environment variable where the rootski API config file should be found
-YAML_CONFIG_PATH_ENV_VAR: str = f"{ENVIRON_PREFIX}CONFIG_FILE_PATH"
+# YAML_CONFIG_PATH_ENV_VAR: str = f"{ENVIRON_PREFIX}CONFIG_FILE_PATH"
 
 # we expect this to be one of "dev" or "prod"
 DEPLOYMENT_ENVIRONMENT_ENV_VAR = f"{ENVIRON_PREFIX}ENVIRONMENT"
@@ -63,24 +62,10 @@ def get_environ_name(name: str) -> str:
     return f"{ENVIRON_PREFIX}{name.upper()}"
 
 
-def load_config_from_yaml(config_fpath: str) -> Dict[str, str]:
-    """Read config from a YAML file."""
-    with Path(config_fpath).open("r") as f:
-        config = yaml.safe_load(f)
-    return config
-
 
 ##########################
 # --- Rootski Config --- #
 ##########################
-
-
-def yaml_config_settings_source(settings: "Config") -> Dict[str, Any]:
-    """App settings from the yaml config file."""
-    yaml_config_path = os.environ.get(YAML_CONFIG_PATH_ENV_VAR)
-    if not yaml_config_path:
-        return {}
-    return load_config_from_yaml(config_fpath=yaml_config_path) if yaml_config_path else {}
 
 
 def aws_parameter_store_settings_source(settings: "Config") -> Dict[str, Any]:
@@ -172,7 +157,9 @@ class Config(BaseSettings):
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     domain: str = DEFAULT_DOMAIN
+
     s3_static_site_origin: str = DEFAULT_S3_STATIC_SITE_DOMAIN
+    
     cognito_aws_region: str
     cognito_user_pool_id: str
     cognito_web_client_id: str
@@ -181,59 +168,8 @@ class Config(BaseSettings):
 
     extra_allowed_cors_origins: List[AnyHttpUrl] = []
 
-    postgres_user: str
-    postgres_password: str
-    postgres_host: str
-    postgres_port: str
-    postgres_db: str
-
     dynamo_table_name: str = DEFAULT_DYNAMO_TABLE_NAME
 
-    @property
-    def sync_sqlalchemy_database_uri(self) -> str:
-        return f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-
-    @property
-    def async_sqlalchemy_database_uri(self) -> str:
-        return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-
-    @property
-    def static_morphemes_json_fpath(self) -> Path:
-        return Path(self.static_assets_dir) / "morphemes.json"
-
-    # TODO - uncomment these; unfortunately, as of Nov 1, 2021, pydantic does not support
-    # "postgressql+psycopg2" or "postgresql+asyncpg" as schemas for the PostgresDsn. This
-    # is coming in the next release, but when I installed the latest release from GitHub
-    # many other portions of the app broke, so for now, these will be constructed using
-    # properties
-
-    # @validator("sync_sqlalchemy_database_uri", pre=True)
-    # def assemble_sync_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> str:
-    #     """Simultaneously validate db connection params and build the connection string."""
-    #     if isinstance(v, str):
-    #         return v
-    #     return PostgresDsn.build(
-    #         scheme="postgresql+psycopg2",
-    #         user=values.get("postgres_user"),
-    #         password=values.get("postgres_password"),
-    #         host=values.get("postgres_host"),
-    #         port=values.get("postgres_port"),
-    #         path=f"/{values.get('postgres_db') or ''}",
-    #     )
-
-    # @validator("async_sqlalchemy_database_uri", pre=True)
-    # def assemble_async_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> str:
-    #     """Simultaneously validate db connection params and build the connection string."""
-    #     if isinstance(v, str):
-    #         return v
-    #     return PostgresDsn.build(
-    #         scheme="postgresql+asyncpg",
-    #         user=values.get("postgres_user"),
-    #         password=values.get("postgres_password"),
-    #         host=values.get("postgres_host"),
-    #         port=values.get("postgres_port"),
-    #         path=f"/{values.get('postgres_db') or ''}",
-    #     )
 
     @property
     def allowed_cors_origins(self) -> List[AnyHttpUrl]:
@@ -278,8 +214,7 @@ class Config(BaseSettings):
             return (
                 init_settings,  # kwargs to Config() constructor
                 env_settings,  # environment variable versions of config values
-                yaml_config_settings_source,  # values from yaml file
-                aws_parameter_store_settings_source,  # values from ssm parameter store
+                # aws_parameter_store_settings_source,  # values from ssm parameter store
                 file_secret_settings,  # ???
             )
 
