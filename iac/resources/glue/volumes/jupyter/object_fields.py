@@ -35,13 +35,6 @@ def create_select_star_soql_stmt(username: str, password: str, security_token: s
     return stmt
 
 
-
-username = "eric.russia97@gmail.com"
-password = "Ozg0&WgLb6jTsg7"
-
-# get this here: https://docs.idalko.com/exalate/display/ED/Salesforce%3A+How+to+generate+a+security+token
-security_token = "lVqxLRwIFZsyVFLRYlT4FvSwf"
-
 password_with_token = password + security_token
 
 select_star_soql_stmt = create_select_star_soql_stmt(
