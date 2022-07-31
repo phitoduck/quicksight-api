@@ -1,7 +1,9 @@
 set dotenv-load := true
 
 AWS_PROFILE := "ben-ai-sandbox"
+AWS_REGION := "us-east-2"
 GLUE_VOLUMES_DIR := "iac/resources/glue/volumes"
+
 
 install:
     python -m pip install -e ./iac
@@ -9,6 +11,9 @@ install:
     python -m pip install -e ./backend_api[dev]
 
 
+######################
+# --- Deployment --- #
+######################
 
 deploy-cdk: download-local-glue-dependencies
     cd ./iac/ \
@@ -18,7 +23,38 @@ deploy-glue: download-local-glue-dependencies
     cd ./iac/ \
         && cdk deploy --profile {{AWS_PROFILE}} "quicksight-glue" --require-approval never
 
+create-salesforce-credentials-secret:
+    #!/bin/bash
 
+    # create a .env file at the root of this repo with these values
+    SECRET=`cat << EOF
+    {
+        "username": "$SF_USERNAME",
+        "password": "$SF_PASSWORD",
+        "security_token": "$SF_SECURITY_TOKEN"
+    }
+    EOF`
+
+    echo "SECRET_YAML" | \
+    aws secretsmanager create-secret \
+        --name "sf-credentials" \
+        --description "Salesforce API credentials for development account" \
+        --profile {{AWS_PROFILE}} \
+        --region {{AWS_REGION}} \
+        --secret-string "$SECRET" | cat
+
+
+delete-salesforce-credentials-secret:
+    aws secretsmanager delete-secret \
+        --secret-id "sf-credentials" \
+        --force-delete-without-recovery \
+        --profile {{AWS_PROFILE}} \
+        --region {{AWS_REGION}} | cat
+
+
+##################################
+# --- Local Glue Development --- #
+##################################
 
 download-local-glue-dependencies: glue-download-jars glue-download-python-deps
 
@@ -43,12 +79,14 @@ glue-start-jupyter: download-local-glue-dependencies
     cd ./iac/resources/glue && docker-compose up
 
 
-
+##########################
+# --- Static Website --- #
+##########################
 
 invalidate-s3-cache: 
 	python ./iac/aws_invalidate_stack.py \
 		--s3-static-site-stack-name "quicksight-static-site" \
-		--region "us-east-2" \
+		--region {{AWS_REGION}} \
 		--profile {{AWS_PROFILE}}
 
 # after running 'make html' or 'make docs-docker', run this to
@@ -56,6 +94,11 @@ invalidate-s3-cache:
 # users can access the new in the browser
 publish-to-s3: invalidate-s3-cache
 	aws s3 sync ./src/quicksight_poc/static/ s3://quicksight.ben-ai-sandbox.com/ --acl public-read --profile {{AWS_PROFILE}}
+
+
+############################
+# --- Project Template --- #
+############################
 
 update-pyscaffold:
     #!/bin/bash

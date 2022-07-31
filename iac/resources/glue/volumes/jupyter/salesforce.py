@@ -5,22 +5,43 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from dataclasses import dataclass
 
+import boto3
+import json
 
 from typing import List, Optional, OrderedDict, Type
 from simple_salesforce import Salesforce, SFType
+import os
 
-#####################
-# --- Constants --- #
-#####################
-
-
-
-password_with_token = password + security_token
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 
 
 #################
 # --- Types --- #
 #################
+
+@dataclass
+class Credentials:
+    username: str
+    password: str
+    security_token: str
+
+    @property
+    def password_with_security_tkn(self) -> str:
+        return self.password + self.security_token
+
+    @staticmethod
+    def fetch_secret_by_id(secret_id: str):
+        secrets_client = boto3.client("secretsmanager", region_name=AWS_REGION)
+        response = secrets_client.get_secret_value(SecretId=secret_id)
+        secret_json = response["SecretString"]
+        secret = json.loads(secret_json)
+        return secret
+
+    @classmethod
+    def from_secrets_manager(cls: Type["Credentials"], secret_id: str) -> "Credentials":
+        secret: dict = Credentials.fetch_secret_by_id(secret_id)
+        return cls(**secret)
+
 
 
 @dataclass
@@ -55,8 +76,6 @@ class SFObjectField:
         field_is_a_location = self.type in ["address", "location"]
         field_has_a_compound_key = self.compound_field_name is not None
         is_compound = field_is_a_location or field_has_a_compound_key
-        if is_compound:
-            print(self.name + " is a compound field!")
         return is_compound
 
     # NOTE: specific to Account-object
@@ -73,6 +92,13 @@ class SFObjectField:
 
     def is_incompatible_with_bulk_apis(self) -> bool:
         return self.is_compound_field() or self.requires_field_service_to_be_enabled()
+
+
+#####################
+# --- Constants --- #
+#####################
+
+sf_credentials = Credentials.from_secrets_manager(secret_id="sf-credentials")
 
 
 ############################
@@ -155,9 +181,9 @@ def run():
 
 
     select_star_soql_stmt = make_select_star_soql_stmt(
-        username=username,
-        password=password,
-        security_token=security_token,
+        username=sf_credentials.username,
+        password=sf_credentials.password,
+        security_token=sf_credentials.security_token,
         obj_name="account",
     )
 
@@ -165,8 +191,8 @@ def run():
         spark
             .read
             .format("com.springml.spark.salesforce")
-            .option("username", username)
-            .option("password", password_with_token)
+            .option("username", sf_credentials.username)
+            .option("password", sf_credentials.password_with_security_tkn)
             .option("soql", select_star_soql_stmt)
             .option("bulk", True)
             # Opportunity.LastStageChangeDate is only availaable in API v52
@@ -183,12 +209,8 @@ def run():
 # job.run()
 
 select_star_soql_stmt = create_select_star_soql_stmt(
-    username=username,
-    password=password,
-    security_token=security_token,
+    username=sf_credentials.username,
+    password=sf_credentials.password,
+    security_token=sf_credentials.security_token,
     obj_name="account",
 )
-
-
-
-print(select_star_soql_stmt)

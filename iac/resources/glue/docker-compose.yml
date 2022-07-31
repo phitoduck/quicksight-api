@@ -14,6 +14,7 @@ services:
       AWS_PROFILE: ben-ai-sandbox
       DISABLE_SSL: "true"
       PYTHONPATH: '$PYTHONPATH:/extra_python_packages/'
+      AWS_REGION: us-east-2
     ports:
       - 4040:4040
       - 18080:18080
