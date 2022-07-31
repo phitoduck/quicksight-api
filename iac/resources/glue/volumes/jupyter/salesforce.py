@@ -19,6 +19,7 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 # --- Types --- #
 #################
 
+
 @dataclass
 class Credentials:
     username: str
@@ -43,7 +44,6 @@ class Credentials:
         return cls(**secret)
 
 
-
 @dataclass
 class SFObjectField:
     """
@@ -60,7 +60,9 @@ class SFObjectField:
     type: str
 
     @classmethod
-    def from_sf_odict(cls: Type["SFObjectField"], sf_odict: OrderedDict) -> "SFObjectField":
+    def from_sf_odict(
+        cls: Type["SFObjectField"], sf_odict: OrderedDict
+    ) -> "SFObjectField":
         return cls(
             is_custom=sf_odict["custom"],
             name=sf_odict["name"],
@@ -98,7 +100,7 @@ class SFObjectField:
 # --- Constants --- #
 #####################
 
-sf_credentials = Credentials.from_secrets_manager(secret_id="sf-credentials")
+SF_CREDENTIALS = Credentials.from_secrets_manager(secret_id="sf-credentials")
 
 
 ############################
@@ -106,12 +108,10 @@ sf_credentials = Credentials.from_secrets_manager(secret_id="sf-credentials")
 ############################
 
 # TODO: if we keep this, add an option to filter out compound fields
-def fetch_all_standard_fields_on_sf_object(username: str, password: str, security_token: str, obj_name: str):
-    sf = Salesforce(
-        username=username,
-        password=password,
-        security_token=security_token
-    )
+def fetch_all_standard_fields_on_sf_object(
+    username: str, password: str, security_token: str, obj_name: str
+):
+    sf = Salesforce(username=username, password=password, security_token=security_token)
 
     response = sf.query(f"SELECT FIELDS(STANDARD) FROM {obj_name} LIMIT 1")
     record: OrderedDict = response["records"][0]
@@ -121,17 +121,15 @@ def fetch_all_standard_fields_on_sf_object(username: str, password: str, securit
     return fields
 
 
-def fetch_all_salesforce_object_fields(username: str, password: str, security_token: str, obj_name: str):
+def fetch_all_salesforce_object_fields(
+    username: str, password: str, security_token: str, obj_name: str
+):
     """
     An issue with fetching *all* fields is that the given user may not have "Field Level Security"
     access for a handful of the fields. This means that there are certain fields the
     user is not allowed to query--resulting in failed queries.
     """
-    sf = Salesforce(
-        username=username,
-        password=password,
-        security_token=security_token
-    )
+    sf = Salesforce(username=username, password=password, security_token=security_token)
 
     sf_obj: SFType = getattr(sf, obj_name)
     obj_describe_result: OrderedDict = sf_obj.describe()
@@ -140,22 +138,31 @@ def fetch_all_salesforce_object_fields(username: str, password: str, security_to
     def pprint_to_file(thing):
         from pprint import pprint
         from pathlib import Path
+
         THIS_DIR = Path(__file__).parent
         with open(THIS_DIR / "describe_account.txt", "wt") as file:
             pprint(thing, stream=file)
 
-    field_objs: List[SFObjectField] = list(SFObjectField.from_sf_odict(o) for o in field_odicts)
-    non_compound_field_objs = [obj for obj in field_objs if not obj.is_incompatible_with_bulk_apis()]
+    field_objs: List[SFObjectField] = list(
+        SFObjectField.from_sf_odict(o) for o in field_odicts
+    )
+    non_compound_field_objs = [
+        obj for obj in field_objs if not obj.is_incompatible_with_bulk_apis()
+    ]
 
     fields = [obj.name for obj in non_compound_field_objs]
 
     return fields
 
+
 def make_select_star_soql_stmt(obj_name: str, fields: List[str]) -> str:
     field_selector_stmt = ", ".join(fields)
     return f"SELECT {field_selector_stmt} FROM {obj_name}"
 
-def create_select_star_soql_stmt(username: str, password: str, security_token: str, obj_name: str) -> str:
+
+def generate_select_star_soql_stmt(
+    username: str, password: str, security_token: str, obj_name: str
+) -> str:
     fields: List[str] = fetch_all_salesforce_object_fields(
         username=username,
         password=password,
@@ -173,44 +180,47 @@ def create_select_star_soql_stmt(username: str, password: str, security_token: s
 # --- Spark Job --- #
 #####################
 
-def run():
+
+def run(sf_credentials: Credentials):
     sc = SparkContext.getOrCreate()
     glueContext = GlueContext(sc)
     spark = glueContext.spark_session
     job = Job(glueContext)
 
-
-    select_star_soql_stmt = make_select_star_soql_stmt(
+    select_star_soql_stmt = generate_select_star_soql_stmt(
         username=sf_credentials.username,
         password=sf_credentials.password,
         security_token=sf_credentials.security_token,
         obj_name="account",
     )
 
+    print("Executing this query:")
+    print(select_star_soql_stmt)
+
     df = (
-        spark
-            .read
-            .format("com.springml.spark.salesforce")
-            .option("username", sf_credentials.username)
-            .option("password", sf_credentials.password_with_security_tkn)
-            .option("soql", select_star_soql_stmt)
-            .option("bulk", True)
-            # Opportunity.LastStageChangeDate is only availaable in API v52
-            .option("version", 52)
-            .option("sfObject", "account")
-            .load()
+        spark.read.format("com.springml.spark.salesforce")
+        .option("username", sf_credentials.username)
+        .option("password", sf_credentials.password_with_security_tkn)
+        .option("soql", select_star_soql_stmt)
+        .option("bulk", True)
+        # Opportunity.LastStageChangeDate is only availaable in API v52
+        .option("version", 52)
+        .option("sfObject", "account")
+        .load()
     )
 
-# run()
+    job.commit()
+    job.run()
+
+
+run(sf_credentials=SF_CREDENTIALS)
 
 # print(df.show())
 
-# job.commit()
-# job.run()
 
-select_star_soql_stmt = create_select_star_soql_stmt(
-    username=sf_credentials.username,
-    password=sf_credentials.password,
-    security_token=sf_credentials.security_token,
-    obj_name="account",
-)
+# select_star_soql_stmt = create_select_star_soql_stmt(
+#     username=SF_CREDENTIALS.username,
+#     password=SF_CREDENTIALS.password,
+#     security_token=SF_CREDENTIALS.security_token,
+#     obj_name="account",
+# )
