@@ -1,20 +1,9 @@
-# This docker-compose.yml assumes the v
-
 version: "3.8"
 
-# docker run --entrypoint python -v $PWD/python-packages:/packages python:3.7-slim-buster -m pip install simple-salesforce -t /packages
 services:
   aws-glue:
-    # command: # spark-submit /home/glue_user/workspace/jupyter_workspace/salesforce.py
-
-    # command: spark-submit /home/glue_user/workspace/jupyter_workspace/salesforce.py
-    # --packages com.force.api:force-partner-api:40.0.0,com.force.api:force-wsc:40.0.0,com.springml:salesforce-wave-api:1.0.9,com.springml:spark-salesforce_2.11:1.1.1,com.fasterxml.jackson.core:jackson-core:2.10.3,com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.10.3
-    # --jars /extra_jars/force-partner-api-40.0.0.jar,/extra_jars/force-wsc-40.0.0.jar,/extra_jars/salesforce-wave-api-1.0.9.jar,/extra_jars/spark-salesforce_2.11-1.1.1.jar
-
-    # spark-submit --jars /extra_jars/force-partner-api-40.0.0.jar,/extra_jars/force-wsc-40.0.0.jar,/extra_jars/salesforce-wave-api-1.0.9.jar,/extra_jars/spark-salesforce_2.11-1.1.1.jar salesforce.py
     command: /home/glue_user/jupyter/jupyter_start.sh
     image: amazon/aws-glue-libs:glue_libs_2.0.0_image_01
-    # image: amazon/aws-glue-libs:glue_libs_3.0.0_image_01
     volumes:
       - ~/.aws:/home/glue_user/.aws
       - ./volumes/jupyter:/home/glue_user/workspace/jupyter_workspace/
@@ -24,24 +13,9 @@ services:
     environment:
       AWS_PROFILE: ben-ai-sandbox
       DISABLE_SSL: "true"
-      # EXTRA_PYTHON_PACKAGE_LOCATION: /extra_jars
       PYTHONPATH: '$PYTHONPATH:/extra_python_packages/'
     ports:
       - 4040:4040
       - 18080:18080
       - 8998:8998
       - 8888:8888
-
-# docker run --rm \
-#   -v ~/.aws:/home/glue_user/.aws \
-#   -v $PWD/volumes/jupyter:/home/glue_user/workspace/jupyter_workspace/ \
-#   -e AWS_PROFILE=ben-ai-sandbox \
-#   -e DISABLE_SSL=true \
-#   amazon/aws-glue-libs:glue_libs_2.0.0_image_01 \
-#     spark-submit \
-#       /home/glue_user/workspace/jupyter_workspace/salesforce.py
-# --packages com.force.api:force-partner-api:40.0.0,com.force.api:force-wsc:40.0.0,com.springml:salesforce-wave-api:1.0.9,com.springml:spark-salesforce_2.11:1.1.1,com.fasterxml.jackson.core:jackson-core:2.10.3,com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.10.3 \
-
-
-
-# version: "3.8"

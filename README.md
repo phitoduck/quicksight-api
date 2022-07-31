@@ -13,3 +13,5 @@ Here are some helpful resources that this repo is patterned from:
 2. An [AWS blogpost](https://aws.amazon.com/blogs/big-data/develop-and-test-aws-glue-version-3-0-jobs-locally-using-a-docker-container/) for developing Glue Jobs locally (because running Notebooks in the console gets expensive quickly and... local unit tests are good)
 3. An [AWS blogpost](https://aws.amazon.com/blogs/big-data/extracting-salesforce-com-data-using-aws-glue-and-analyzing-with-amazon-athena/) about extracting Salesforce data into Athena using Glue
 
+**Note** This repo has a `justfile` instead of a `makefile`. See the `justfile` target `glue-start-jupyter`
+to understand how to set up the local glue environment and run `docker-compose`.
