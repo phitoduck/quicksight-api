@@ -1,7 +1,31 @@
+set dotenv-load := true
+
 AWS_PROFILE := "ben-ai-sandbox"
 
+download-local-glue-dependencies:
+    cd ./iac/resources/glue
+
+    {{ path_exists( "iac/resources/glue/volumes/maven_jars/force-partner-api-40.0.0.jar" ) }} || \
+        python iac/resources/glue/fetch_maven_jars.py
+
+    {{ path_exists( "iac/resources/glue/volumes/python-packages/simple_salesforce" ) }} || \
+        docker run --rm \
+            --entrypoint python \
+            -v $PWD/volumes/python-packages:/packages \
+            python:3.7-slim-buster \
+                -m pip install simple-salesforce -t /packages  
+
+
 install:
-    python -m pip install -e .[dev]
+    python -m pip install -e ./iac
+    python -m pip install -r ./iac/resources/glue/fetch-maven.requirements.txt
+    python -m pip install -e ./backend_api[dev]
+
+
+glue-start-jupyter: download-local-glue-dependencies
+    cd ./iac/resources/glue
+    docker-compose up
+
 
 invalidate-s3-cache:
 	python ./iac/aws_invalidate_stack.py \
@@ -12,12 +36,12 @@ invalidate-s3-cache:
 # NOTE: quicksight-glue requires the maven jars to be present in this project
 deploy-cdk:
     cd ./iac/ \
-        && cdk deploy --profile ben-ai-sandbox --all --require-approval never
+        && cdk deploy --profile {{AWS_PROFILE}} --all --require-approval never
 
 # NOTE: quicksight-glue requires the maven jars to be present in this project
 deploy-glue:
     cd ./iac/ \
-        && cdk deploy --profile ben-ai-sandbox "quicksight-glue" --require-approval never
+        && cdk deploy --profile {{AWS_PROFILE}} "quicksight-glue" --require-approval never
 
 # after running 'make html' or 'make docs-docker', run this to
 # upload the docs to S3 and incalidate the CloudFront cache so that

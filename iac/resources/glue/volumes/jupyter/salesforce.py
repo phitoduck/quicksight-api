@@ -5,6 +5,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from dataclasses import dataclass
 
+
 from typing import List, Optional, OrderedDict, Type
 from simple_salesforce import Salesforce, SFType
 

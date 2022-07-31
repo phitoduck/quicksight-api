@@ -7,6 +7,7 @@ __pycache__
 
 **/venv
 **/.venv
+**/.ipynb_checkpoints
 
 # CDK asset staging directory
 .cdk.staging

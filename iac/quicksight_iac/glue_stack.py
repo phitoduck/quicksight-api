@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 from aws_cdk import Stack, CfnOutput
 from constructs import Construct
 from aws_cdk import aws_cognito as cognito
@@ -7,15 +8,14 @@ from aws_cdk import aws_iam as iam
 import aws_cdk as cdk
 
 from aws_cdk import aws_certificatemanager as acm
-from aws_cdk import aws_route53 as route53
-from aws_cdk import aws_route53_targets as route53_targets
 
 from aws_cdk import aws_s3 as s3
-from aws_cdk import aws_s3_deployment as s3_deployment
-from aws_cdk import aws_glue_alpha as glue_alpha
+from aws_cdk import aws_glue_alpha as glue
 
 THIS_DIR = Path(__file__).parent
-MAVEN_JARS_DIR = THIS_DIR / "../resources/glue/volumes/maven_jars/"
+GLUE_DIR = (THIS_DIR / "../resources/glue").resolve().absolute()
+MAVEN_JARS_DIR = GLUE_DIR / "volumes/maven_jars/"
+GLUE_ETL_JOB__PYTHON_SCRIPT__FPATH = GLUE_DIR / "volumes/jupyter/salesforce.py"
 
 class GlueStack(Stack):
     def __init__(
@@ -25,43 +25,52 @@ class GlueStack(Stack):
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        
+        self.make_glue_job()
 
-        bucket = s3.Bucket(
+    
+    def make_glue_job(self) -> glue.Job:
+
+        etl_python_script: glue.Code = self.get_glue_python_script()
+        jar_files: List[glue.Code] = self.get_maven_jar_assets()
+
+        job = glue.Job(
             self,
-            "glue-dependencies-bucket",
-            bucket_name="glue-dependencies-bucket-experiment",
-            removal_policy=cdk.RemovalPolicy.DESTROY,
-            public_read_access=False
+            "salesforce-ingest-job",
+            worker_count=2,
+            worker_type=glue.WorkerType.G_1_X,
+            max_retries=0,
+            executable=glue.JobExecutable.python_etl(
+                extra_jars=jar_files,
+                extra_jars_first=True,
+                glue_version=glue.GlueVersion.V2_0,
+                script=etl_python_script,
+                python_version=glue.PythonVersion.THREE,
+            ),
+            # list of arguments here: https://docs.aws.amazon.com/glue/latest/dg/aws-glue-programming-etl-glue-arguments.html
+            default_arguments={
+                # comma separated list of (s3:// paths to .whl files) or (requirements.txt formatted pip statements)
+                # see documentation here: https://aws.amazon.com/premiumsupport/knowledge-center/glue-version2-external-python-libraries/
+                "--additional-python-modules": "simple-salesforce==1.12.1"
+            },
         )
 
-        # WARNING! Do not use this for large numbers of files.
-        # CDK moves the items to the CDKToolkit bucket first, then
-        # copies them to the final destination. This can be extremely slow.
-        s3_deployment.BucketDeployment(
-            self,
-            "maven-jars-for-glue",
-            sources=[
-                s3_deployment.Source.asset(str(MAVEN_JARS_DIR))
-            ],
-            destination_bucket=bucket,
-        )
+        
 
-        glue_alpha.JobExecutable.python_etl(
-            extra_files=1,
-            extra_jars=...,
-            extra_jars_first=...,
-            extra_python_files=...,
-            glue_version=glue_alpha.GlueVersion.V2_0,
-            script=...,
-            python_version=glue_alpha.PythonVersion.THREE,
-        )
 
-        glue_alpha.Job(
-            self,
-            "salesforce-ingest-job"
-            worker_count=1,
-            max_retries=2,
-            executable=...,
+    def get_maven_jar_assets(self) -> List[glue.Code]:
+        """Create a ``glue.Code`` object for each ``.jar`` file in ``maven_jars/``."""
+        jar_fpaths: List[Path] = list(MAVEN_JARS_DIR.glob("*.jar"))
+        return [
+            glue.Code.from_asset(
+                path=str(jar_fpath)
+            )
+            for jar_fpath in jar_fpaths
+        ]
+
+    def get_glue_python_script(self) -> glue.Code:
+        return glue.Code.from_asset(
+            path=str(GLUE_ETL_JOB__PYTHON_SCRIPT__FPATH),
         )
 
 
