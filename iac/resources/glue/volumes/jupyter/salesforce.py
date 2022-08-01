@@ -1,10 +1,12 @@
 import sys
+import awsglue
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from awsglue.context import GlueContext
 from awsglue.job import Job
 from dataclasses import dataclass
+from pyspark.sql import DataFrame, SparkSession
 
 import boto3
 import json
@@ -33,6 +35,8 @@ class JobArgs:
     output_bucket_name: str
     # name of the customer the data is written for
     customer_org_name: str
+    # salesforce object to perform ETL on (account, opportunity, etc.)
+    salesforce_object_names_to_etl: List[str]
 
     ###################################
     # --- Standard Glue Arguments --- #
@@ -70,9 +74,11 @@ class JobArgs:
         print()
 
         return cls(
+            # custom arguments
             output_bucket_name=opts["custom__output_bucket_name"],
             customer_org_name=opts["custom__customer_org_name"],
-
+            salesforce_object_names_to_etl=opts.get("custom__salesforce_object_names_to_etl", "account,opportunity").strip().split(","),
+            # default glue arguments
             job_id=opts["JOB_ID"],
             job_run_id=opts["JOB_RUN_ID"],
             job_bookmark_option=opts["job_bookmark_option"],
@@ -86,7 +92,7 @@ class JobArgs:
 
 
 @dataclass
-class Credentials:
+class SalesforceCredentials:
     username: str
     password: str
     security_token: str
@@ -104,8 +110,8 @@ class Credentials:
         return secret
 
     @classmethod
-    def from_secrets_manager(cls: Type["Credentials"], secret_id: str) -> "Credentials":
-        secret: dict = Credentials.fetch_secret_by_id(secret_id)
+    def from_secrets_manager(cls: Type["SalesforceCredentials"], secret_id: str) -> "SalesforceCredentials":
+        secret: dict = SalesforceCredentials.fetch_secret_by_id(secret_id)
         return cls(**secret)
 
 
@@ -159,18 +165,6 @@ class SFObjectField:
 
     def is_incompatible_with_bulk_apis(self) -> bool:
         return self.is_compound_field() or self.requires_field_service_to_be_enabled()
-
-
-#####################
-# --- Constants --- #
-#####################
-
-SF_CREDENTIALS = Credentials.from_secrets_manager(secret_id="sf-credentials")
-JOB_ARGS = JobArgs.parse_from_argv()
-
-print("\nParsed Job Args:")
-print(JOB_ARGS)
-print()
 
 
 ############################
@@ -246,39 +240,12 @@ def generate_select_star_soql_stmt(
     return stmt
 
 
-#####################
-# --- Spark Job --- #
-#####################
+####################################
+# --- PySpark Helper Functions --- #
+####################################
 
 
-def run(sf_credentials: Credentials):
-    sc = SparkContext.getOrCreate()
-    glueContext = GlueContext(sc)
-    spark = glueContext.spark_session
-    job = Job(glueContext)
-
-    select_star_soql_stmt = generate_select_star_soql_stmt(
-        username=sf_credentials.username,
-        password=sf_credentials.password,
-        security_token=sf_credentials.security_token,
-        obj_name="account",
-    )
-
-    print("\Derived this query for 'SELECT *':")
-    print(select_star_soql_stmt)
-
-    print("\nExecuting the query...")
-    df = (
-        spark.read.format("com.springml.spark.salesforce")
-        .option("username", sf_credentials.username)
-        .option("password", sf_credentials.password_with_security_tkn)
-        .option("soql", select_star_soql_stmt)
-        .option("bulk", True)
-        # Opportunity.LastStageChangeDate is only availaable in API v52
-        .option("version", 52)
-        .option("sfObject", "account")
-        .load()
-    )
+def log_basic_spark_df_info(df: DataFrame):
 
     json_first_row = df.selectExpr("*").limit(1).toPandas().to_json(orient="records")
     print("\nFirst row:")
@@ -290,17 +257,148 @@ def run(sf_credentials: Credentials):
     print("\ndf.show()")
     print(df.show())
 
+
+def etl_salesforce_object(
+    sf_credentials: SalesforceCredentials,
+    salesforce_obj: str,
+    customer_org_name: str,
+    target_s3_bucket_name: str,
+    spark: SparkSession,
+    glue_ctx: GlueContext,
+):
+
+    print("=====================================")
+    print(f' Running ETL for "{salesforce_obj}"')
+    print("=====================================")
+    print()
+
+    select_star_soql_stmt = generate_select_star_soql_stmt(
+        username=sf_credentials.username,
+        password=sf_credentials.password,
+        security_token=sf_credentials.security_token,
+        obj_name=salesforce_obj,
+    )
+
+    print("\nDerived this query for 'SELECT *':")
+    print(select_star_soql_stmt)
+
+    print("\nExecuting the query...")
+    query_results_df: DataFrame = execute_soql_query_with_bulk_apis(
+        spark=spark,
+        soql_stmt=select_star_soql_stmt,
+        sf_credentials=sf_credentials,
+    )
+    log_basic_spark_df_info(df=query_results_df)
+
+    write_salesforce_obj_df_to_s3(
+        df=query_results_df,
+        customer_org_name=customer_org_name,
+        salesforce_obj=salesforce_obj,
+        target_s3_bucket_name=target_s3_bucket_name,
+        glue_ctx=glue_ctx,
+    )
+
+    print(f"\nSuccessfully ran ETL for {salesforce_obj}!")
+
+def execute_soql_query_with_bulk_apis(
+    soql_stmt: str, 
+    sf_credentials: SalesforceCredentials,
+    spark: SparkSession,
+) -> DataFrame:
+    df = (
+        spark.read.format("com.springml.spark.salesforce")
+            .option("username", sf_credentials.username)
+            .option("password", sf_credentials.password_with_security_tkn)
+            .option("soql", soql_stmt)
+            .option("bulk", True)
+            # Opportunity.LastStageChangeDate is only availaable in API v52
+            .option("version", 52)
+            .option("sfObject", "account")
+            .load()
+    )
+    return df
+
+
+def write_salesforce_obj_df_to_s3(
+    df: DataFrame,
+    salesforce_obj: str,
+    target_s3_bucket_name: str,
+    customer_org_name: str,
+    glue_ctx: GlueContext,
+):
+    # val datasource0 = DynamicFrame(df, glueContext)
+    #     .withName("datasource0")
+    #     .withTransformationContext("datasource0")  
+        
+    # val datasink1 = glueContext
+    #     .getSinkWithFormat(
+    #         connectionType = "s3", 
+    #         options = JsonOptions(
+    #             Map(
+    #                 "path" -> "s3://replace-with-your-s3-bucket/sfdc-output", 
+    #                 "partitionKeys" -> Seq("Industry")
+    #             )), 
+    #         format = "parquet",
+    #         transformationContext = "datasink1"
+    #     ).writeDynamicFrame(datasource0)
+    
+    # convert spark df to DynamicFrame
+    datasource_ddf = awsglue.DynamicFrame.fromDF(
+        dataframe=df, 
+        name=f"{salesforce_obj}_datasource",
+        glue_ctx=glue_ctx, 
+    )
+
+    # write the dynamic dataframe to S3
+    s3_path = f"s3://{target_s3_bucket_name}/org_name={customer_org_name}/sf_object={salesforce_obj}"
+    print(f"\nWriting results to {s3_path}")
+    glue_ctx.write_dynamic_frame.from_options(
+        frame=datasource_ddf, 
+        connection_type="s3", 
+        connection_options={
+            "path": s3_path,
+        }, 
+        format="parquet",
+        transformation_ctx=f"{salesforce_obj}_datasink"
+    )
+
+
+
+#####################
+# --- Spark Job --- #
+#####################
+
+
+def run(job_args: JobArgs):
+
+    # TODO: get the secret_id from job_args; maybe using the customer org name
+    sf_credentials = SalesforceCredentials.from_secrets_manager(secret_id="sf-credentials")
+
+    # configure spark session
+    sc = SparkContext.getOrCreate()
+    glue_context = GlueContext(sc)
+    spark: SparkSession = glue_context.spark_session
+    job = Job(glue_context)
+
+    for salesforce_obj in job_args.salesforce_object_names_to_etl:
+        etl_salesforce_object(
+            salesforce_obj=salesforce_obj,
+            customer_org_name=job_args.customer_org_name,
+            target_s3_bucket_name=job_args.output_bucket_name,
+            sf_credentials=sf_credentials,
+            spark=spark,
+            glue_ctx=glue_context
+        )
+
     job.commit()
 
 
-run(sf_credentials=SF_CREDENTIALS)
+if __name__ == "__main__":
 
-# print(df.show())
+    JOB_ARGS = JobArgs.parse_from_argv()
 
+    print("\nParsed Job Args:")
+    print(JOB_ARGS)
+    print()
 
-# select_star_soql_stmt = create_select_star_soql_stmt(
-#     username=SF_CREDENTIALS.username,
-#     password=SF_CREDENTIALS.password,
-#     security_token=SF_CREDENTIALS.security_token,
-#     obj_name="account",
-# )
+    run(job_args=JOB_ARGS)
