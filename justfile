@@ -23,6 +23,10 @@ deploy-glue: download-local-glue-dependencies
     cd ./iac/ \
         && cdk deploy --profile {{AWS_PROFILE}} "quicksight-glue" --require-approval never
 
+synth-glue: download-local-glue-dependencies
+    cd ./iac/ \
+        && cdk synth --profile {{AWS_PROFILE}} "quicksight-glue" --require-approval never
+
 create-salesforce-credentials-secret:
     #!/bin/bash
 

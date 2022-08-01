@@ -209,8 +209,9 @@ def run(sf_credentials: Credentials):
         .load()
     )
 
+    print(df.show())
+
     job.commit()
-    job.run()
 
 
 run(sf_credentials=SF_CREDENTIALS)
