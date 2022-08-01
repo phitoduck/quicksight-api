@@ -1,5 +1,7 @@
+# read environment variables from the .env file
 set dotenv-load := true
 
+# constants accessible with {{CONSTANT_NAME}} syntax
 AWS_PROFILE := "ben-ai-sandbox"
 AWS_REGION := "us-east-2"
 GLUE_VOLUMES_DIR := "iac/resources/glue/volumes"
@@ -30,7 +32,7 @@ synth-glue: download-local-glue-dependencies
 create-salesforce-credentials-secret:
     #!/bin/bash
 
-    # create a .env file at the root of this repo with these values
+    # Note: the .env file in this repo must contain these referenced values
     SECRET=`cat << EOF
     {
         "username": "$SF_USERNAME",
@@ -48,12 +50,22 @@ create-salesforce-credentials-secret:
         --secret-string "$SECRET" | cat
 
 
+##################################
+# --- Teardown of Deployment --- #
+##################################
+
 delete-salesforce-credentials-secret:
     aws secretsmanager delete-secret \
         --secret-id "sf-credentials" \
         --force-delete-without-recovery \
         --profile {{AWS_PROFILE}} \
         --region {{AWS_REGION}} | cat
+
+# Note: this may fail due certain AWS resources requiring manual deletion.
+#  For example, S3 buckets usually cannot be deleted if they have objects in them.
+cdk-destroy: delete-salesforce-credentials-secret
+    cd ./iac/ \
+        && cdk destroy --profile {{AWS_PROFILE}} --all --require-approval never
 
 
 ##################################
