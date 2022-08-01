@@ -7,6 +7,8 @@ This repository is for a project that does the following:
 3. Builds a series of Athena tables via Athena Queries in AWS Step Functions
 4. Exposes dashboards in AWS Quicksight with some visualizations from the data
 
+![](./diagram.png)
+
 Here are some helpful resources that this repo is patterned from:
 
 1. [Salesforce/Pyspark tutorial](https://www.jitsejan.com/integrating-pyspark-with-salesforce) by JJ's world
@@ -15,3 +17,50 @@ Here are some helpful resources that this repo is patterned from:
 
 **Note** This repo has a `justfile` instead of a `makefile`. See the `justfile` target `glue-start-jupyter`
 to understand how to set up the local glue environment and run `docker-compose`.
+
+## Deploying this architecture
+
+### Install `just` with:
+
+```bash
+brew install just
+apt-get update && apt-get install -y just
+choco install just
+```
+
+### Install the AWS CLI and AWS CDK
+
+### Run `cdk bootstrap` on `us-east-2`
+
+### Place salesforce credentials in `.env` at the root of this repository
+
+```env
+SF_USERNAME=username
+SF_PASSWORD=password
+
+# get this here: https://docs.idalko.com/exalate/display/ED/Salesforce%3A+How+to+generate+a+security+token
+SF_SECURITY_TOKEN=security-token
+```
+
+### Configure an AWS profile with API access to Glue, S3, and IAM
+
+### Install python dependencies
+
+```bash
+python -m venv ./venv/
+source ./venv/bin/activate
+just install
+```
+
+### Run Glue locally for development
+
+```bash
+just glue-start-jupyter
+```
+
+### Deploy to AWS
+
+```bash
+just deploy-glue
+```
+
