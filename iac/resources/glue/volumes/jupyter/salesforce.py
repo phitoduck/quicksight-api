@@ -1,3 +1,4 @@
+import sys
 from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
@@ -11,13 +12,77 @@ import json
 from typing import List, Optional, OrderedDict, Type
 from simple_salesforce import Salesforce, SFType
 import os
+from pprint import pprint, pformat
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 
 
-#################
-# --- Types --- #
-#################
+#######################
+# --- Dataclasses --- #
+#######################
+
+@dataclass
+class JobArgs:
+    """Object to easily access CLI arguments passed to the glue job."""
+    
+    ############################
+    # --- Custom Arguments --- #
+    ############################
+    
+    # bucket to write the output of this job to
+    output_bucket_name: str
+    # name of the customer the data is written for
+    customer_org_name: str
+
+    ###################################
+    # --- Standard Glue Arguments --- #
+    ###################################
+
+    job_id: Optional[str]
+    job_run_id: Optional[str]
+    job_bookmark_from: Optional[str]
+    job_bookmark_to: Optional[str]
+
+    security_configuration: Optional[str]
+    temp_dir: Optional[str]
+    redshift_temp_dir: Optional[str]
+    encryption_type: Optional[str]
+
+    job_bookmark_option: str = "job-bookmark-disable"
+
+    def __str__(self) -> str:
+        return pformat(self.__dict__)
+
+
+    @classmethod
+    def parse_from_argv(cls: Type["JobArgs"]) -> "JobArgs":
+
+        opts: dict = getResolvedOptions(
+            args=sys.argv, 
+            options=[
+                "custom__output_bucket_name",
+                "custom__customer_org_name",
+            ],
+        )
+
+        print("\nALL ARGS PASSED TO JOB:")
+        pprint(opts)
+        print()
+
+        return cls(
+            output_bucket_name=opts["custom__output_bucket_name"],
+            customer_org_name=opts["custom__customer_org_name"],
+
+            job_id=opts["JOB_ID"],
+            job_run_id=opts["JOB_RUN_ID"],
+            job_bookmark_option=opts["job_bookmark_option"],
+            job_bookmark_from=opts["job_bookmark_from"],
+            job_bookmark_to=opts["job_bookmark_to"],
+            security_configuration=opts["SECURITY_CONFIGURATION"],
+            temp_dir=opts["TempDir"],
+            redshift_temp_dir=opts["RedshiftTempDir"],
+            encryption_type=opts["encryption_type"],
+        )
 
 
 @dataclass
@@ -101,6 +166,11 @@ class SFObjectField:
 #####################
 
 SF_CREDENTIALS = Credentials.from_secrets_manager(secret_id="sf-credentials")
+JOB_ARGS = JobArgs.parse_from_argv()
+
+print("\nParsed Job Args:")
+print(JOB_ARGS)
+print()
 
 
 ############################
@@ -194,9 +264,10 @@ def run(sf_credentials: Credentials):
         obj_name="account",
     )
 
-    print("Executing this query:")
+    print("\Derived this query for 'SELECT *':")
     print(select_star_soql_stmt)
 
+    print("\nExecuting the query...")
     df = (
         spark.read.format("com.springml.spark.salesforce")
         .option("username", sf_credentials.username)
@@ -209,6 +280,14 @@ def run(sf_credentials: Credentials):
         .load()
     )
 
+    json_first_row = df.selectExpr("*").limit(1).toPandas().to_json(orient="records")
+    print("\nFirst row:")
+    pprint(json_first_row)
+
+    print("\n df.head()")
+    print(df.head())
+
+    print("\ndf.show()")
     print(df.show())
 
     job.commit()

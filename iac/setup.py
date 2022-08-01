@@ -10,6 +10,7 @@ setuptools.setup(
     package_dir={"": "."},
     packages=setuptools.find_packages(),
     install_requires=[
+        "rich",
         "aws-cdk-lib==2.27.0",
         "constructs>=10.0.0,<11.0.0",
         "aws-cdk.aws-apigatewayv2-alpha==2.27.0a0",

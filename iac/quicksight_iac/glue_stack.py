@@ -27,6 +27,8 @@ class GlueStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         jars_bucket: s3.Bucket = self.make_bucket_for_etl_script_dependencies()
+        etl_output_bucket: s3.Bucket = self.make_output_bucket_for_etl_job()
+
         maven_jar_s3_keys, maven_jarfile_deployment = self.upload_maven_jars_to_bucket(
             bucket=jars_bucket, jarfile_prefix="maven-jars/"
         )
@@ -34,6 +36,7 @@ class GlueStack(Stack):
         etl_job: glue.Job = self.make_glue_job(
             maven_jar_s3_keys=maven_jar_s3_keys,
             maven_jarfile_deployment=maven_jarfile_deployment,
+            etl_output_bucket=etl_output_bucket,
         )
 
         self.authorize_etl_job_to_access_secrets(etl_job=etl_job)
@@ -42,6 +45,7 @@ class GlueStack(Stack):
         self,
         maven_jar_s3_keys: List[str],
         maven_jarfile_deployment: s3_deployment.BucketDeployment,
+        etl_output_bucket: s3.Bucket,
     ) -> glue.Job:
 
         etl_python_script: glue.Code = self.get_glue_python_script()
@@ -69,9 +73,13 @@ class GlueStack(Stack):
             default_arguments={
                 # comma separated list of (s3:// paths to .whl files) or (requirements.txt formatted pip statements)
                 # see documentation here: https://aws.amazon.com/premiumsupport/knowledge-center/glue-version2-external-python-libraries/
-                "--additional-python-modules": "simple-salesforce==1.12.1"
+                "--additional-python-modules": "simple-salesforce==1.12.1",
+                "--custom__output_bucket_name": etl_output_bucket.bucket_name,
+                "--custom__customer_org_name": "development",
             },
         )
+
+        etl_output_bucket.grant_read_write(etl_job.role)
 
         # ensure the jar files are uploaded before the job is created
         etl_job.node.add_dependency(maven_jarfile_deployment)
@@ -84,6 +92,16 @@ class GlueStack(Stack):
             "maven-jars-bucket",
             removal_policy=cdk.RemovalPolicy.DESTROY,
             # delete s3 objects on "cdk destroy" so we don't have to manually delete them
+            auto_delete_objects=True,
+        )
+
+    def make_output_bucket_for_etl_job(self) -> s3.Bucket:
+        return s3.Bucket(
+            self,
+            "etl-output-bucket",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+            # delete s3 objects on "cdk destroy" so we don't have to manually delete them
+            # TODO: remove this when we have real production data
             auto_delete_objects=True,
         )
 
