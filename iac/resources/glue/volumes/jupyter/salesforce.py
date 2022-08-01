@@ -57,7 +57,6 @@ class JobArgs:
     def __str__(self) -> str:
         return pformat(self.__dict__)
 
-
     @classmethod
     def parse_from_argv(cls: Type["JobArgs"]) -> "JobArgs":
 
@@ -77,7 +76,9 @@ class JobArgs:
             # custom arguments
             output_bucket_name=opts["custom__output_bucket_name"],
             customer_org_name=opts["custom__customer_org_name"],
-            salesforce_object_names_to_etl=opts.get("custom__salesforce_object_names_to_etl", "account,opportunity").strip().split(","),
+            salesforce_object_names_to_etl=JobArgs.parse_lowercase_salesforce_object_names(
+                opts.get("custom__salesforce_object_names_to_etl", "account,opportunity")
+            ),
             # default glue arguments
             job_id=opts["JOB_ID"],
             job_run_id=opts["JOB_RUN_ID"],
@@ -90,6 +91,10 @@ class JobArgs:
             encryption_type=opts["encryption_type"],
         )
 
+    @staticmethod
+    def parse_lowercase_salesforce_object_names(sf_obj_list: str) -> List[str]:
+        sf_objs = sf_obj_list.strip().split(",")
+        return [sf_obj.lower() for sf_obj in sf_objs]
 
 @dataclass
 class SalesforceCredentials:
@@ -254,9 +259,6 @@ def log_basic_spark_df_info(df: DataFrame):
     print("\n df.head()")
     print(df.head())
 
-    print("\ndf.show()")
-    print(df.show())
-
 
 def etl_salesforce_object(
     sf_credentials: SalesforceCredentials,
@@ -284,9 +286,10 @@ def etl_salesforce_object(
 
     print("\nExecuting the query...")
     query_results_df: DataFrame = execute_soql_query_with_bulk_apis(
-        spark=spark,
         soql_stmt=select_star_soql_stmt,
+        salesforce_obj=salesforce_obj,
         sf_credentials=sf_credentials,
+        spark=spark,
     )
     log_basic_spark_df_info(df=query_results_df)
 
@@ -302,6 +305,7 @@ def etl_salesforce_object(
 
 def execute_soql_query_with_bulk_apis(
     soql_stmt: str, 
+    salesforce_obj: str,
     sf_credentials: SalesforceCredentials,
     spark: SparkSession,
 ) -> DataFrame:
@@ -313,7 +317,7 @@ def execute_soql_query_with_bulk_apis(
             .option("bulk", True)
             # Opportunity.LastStageChangeDate is only availaable in API v52
             .option("version", 52)
-            .option("sfObject", "account")
+            .option("sfObject", salesforce_obj)
             .load()
     )
     return df
