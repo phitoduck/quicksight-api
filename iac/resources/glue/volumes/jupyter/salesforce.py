@@ -23,14 +23,15 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 # --- Dataclasses --- #
 #######################
 
+
 @dataclass
 class JobArgs:
     """Object to easily access CLI arguments passed to the glue job."""
-    
+
     ############################
     # --- Custom Arguments --- #
     ############################
-    
+
     # bucket to write the output of this job to
     output_bucket_name: str
     # name of the customer the data is written for
@@ -61,7 +62,7 @@ class JobArgs:
     def parse_from_argv(cls: Type["JobArgs"]) -> "JobArgs":
 
         opts: dict = getResolvedOptions(
-            args=sys.argv, 
+            args=sys.argv,
             options=[
                 "custom__output_bucket_name",
                 "custom__customer_org_name",
@@ -77,7 +78,9 @@ class JobArgs:
             output_bucket_name=opts["custom__output_bucket_name"],
             customer_org_name=opts["custom__customer_org_name"],
             salesforce_object_names_to_etl=JobArgs.parse_lowercase_salesforce_object_names(
-                opts.get("custom__salesforce_object_names_to_etl", "account,opportunity")
+                opts.get(
+                    "custom__salesforce_object_names_to_etl", "account,opportunity"
+                )
             ),
             # default glue arguments
             job_id=opts["JOB_ID"],
@@ -95,6 +98,7 @@ class JobArgs:
     def parse_lowercase_salesforce_object_names(sf_obj_list: str) -> List[str]:
         sf_objs = sf_obj_list.strip().split(",")
         return [sf_obj.lower() for sf_obj in sf_objs]
+
 
 @dataclass
 class SalesforceCredentials:
@@ -115,7 +119,9 @@ class SalesforceCredentials:
         return secret
 
     @classmethod
-    def from_secrets_manager(cls: Type["SalesforceCredentials"], secret_id: str) -> "SalesforceCredentials":
+    def from_secrets_manager(
+        cls: Type["SalesforceCredentials"], secret_id: str
+    ) -> "SalesforceCredentials":
         secret: dict = SalesforceCredentials.fetch_secret_by_id(secret_id)
         return cls(**secret)
 
@@ -303,22 +309,23 @@ def etl_salesforce_object(
 
     print(f"\nSuccessfully ran ETL for {salesforce_obj}!")
 
+
 def execute_soql_query_with_bulk_apis(
-    soql_stmt: str, 
+    soql_stmt: str,
     salesforce_obj: str,
     sf_credentials: SalesforceCredentials,
     spark: SparkSession,
 ) -> DataFrame:
     df = (
         spark.read.format("com.springml.spark.salesforce")
-            .option("username", sf_credentials.username)
-            .option("password", sf_credentials.password_with_security_tkn)
-            .option("soql", soql_stmt)
-            .option("bulk", True)
-            # Opportunity.LastStageChangeDate is only availaable in API v52
-            .option("version", 52)
-            .option("sfObject", salesforce_obj)
-            .load()
+        .option("username", sf_credentials.username)
+        .option("password", sf_credentials.password_with_security_tkn)
+        .option("soql", soql_stmt)
+        .option("bulk", True)
+        # Opportunity.LastStageChangeDate is only availaable in API v52
+        .option("version", 52)
+        .option("sfObject", salesforce_obj)
+        .load()
     )
     return df
 
@@ -332,40 +339,39 @@ def write_salesforce_obj_df_to_s3(
 ):
     # val datasource0 = DynamicFrame(df, glueContext)
     #     .withName("datasource0")
-    #     .withTransformationContext("datasource0")  
-        
+    #     .withTransformationContext("datasource0")
+
     # val datasink1 = glueContext
     #     .getSinkWithFormat(
-    #         connectionType = "s3", 
+    #         connectionType = "s3",
     #         options = JsonOptions(
     #             Map(
-    #                 "path" -> "s3://replace-with-your-s3-bucket/sfdc-output", 
+    #                 "path" -> "s3://replace-with-your-s3-bucket/sfdc-output",
     #                 "partitionKeys" -> Seq("Industry")
-    #             )), 
+    #             )),
     #         format = "parquet",
     #         transformationContext = "datasink1"
     #     ).writeDynamicFrame(datasource0)
-    
+
     # convert spark df to DynamicFrame
     datasource_ddf = awsglue.DynamicFrame.fromDF(
-        dataframe=df, 
+        dataframe=df,
         name=f"{salesforce_obj}_datasource",
-        glue_ctx=glue_ctx, 
+        glue_ctx=glue_ctx,
     )
 
     # write the dynamic dataframe to S3
-    s3_path = f"s3://{target_s3_bucket_name}/org_name={customer_org_name}/sf_object={salesforce_obj}"
+    s3_path = f"s3://{target_s3_bucket_name}/{customer_org_name}/{salesforce_obj}/"
     print(f"\nWriting results to {s3_path}")
     glue_ctx.write_dynamic_frame.from_options(
-        frame=datasource_ddf, 
-        connection_type="s3", 
+        frame=datasource_ddf,
+        connection_type="s3",
         connection_options={
             "path": s3_path,
-        }, 
+        },
         format="parquet",
-        transformation_ctx=f"{salesforce_obj}_datasink"
+        transformation_ctx=f"{salesforce_obj}_datasink",
     )
-
 
 
 #####################
@@ -376,7 +382,9 @@ def write_salesforce_obj_df_to_s3(
 def run(job_args: JobArgs):
 
     # TODO: get the secret_id from job_args; maybe using the customer org name
-    sf_credentials = SalesforceCredentials.from_secrets_manager(secret_id="sf-credentials")
+    sf_credentials = SalesforceCredentials.from_secrets_manager(
+        secret_id="sf-credentials"
+    )
 
     # configure spark session
     sc = SparkContext.getOrCreate()
@@ -391,7 +399,7 @@ def run(job_args: JobArgs):
             target_s3_bucket_name=job_args.output_bucket_name,
             sf_credentials=sf_credentials,
             spark=spark,
-            glue_ctx=glue_context
+            glue_ctx=glue_context,
         )
 
     job.commit()

@@ -27,7 +27,7 @@ class GlueStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         jars_bucket: s3.Bucket = self.make_bucket_for_etl_script_dependencies()
-        etl_output_bucket: s3.Bucket = self.make_output_bucket_for_etl_job()
+        self.etl_output_bucket: s3.Bucket = self.make_output_bucket_for_etl_job()
 
         maven_jar_s3_keys, maven_jarfile_deployment = self.upload_maven_jars_to_bucket(
             bucket=jars_bucket, jarfile_prefix="maven-jars/"
@@ -36,7 +36,7 @@ class GlueStack(Stack):
         etl_job: glue.Job = self.make_glue_job(
             maven_jar_s3_keys=maven_jar_s3_keys,
             maven_jarfile_deployment=maven_jarfile_deployment,
-            etl_output_bucket=etl_output_bucket,
+            etl_output_bucket=self.etl_output_bucket,
         )
 
         self.authorize_etl_job_to_access_secrets(etl_job=etl_job)

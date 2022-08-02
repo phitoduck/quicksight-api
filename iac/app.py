@@ -4,6 +4,7 @@ import os
 # from quicksight_iac.quicksight_api_lambda_stack import QuicksightApiLambdaStack
 # from quicksight_iac.lambda_stack import LambdaStack
 import aws_cdk as cdk
+from quicksight_iac.athena_stack import AthenaCustomerStack
 from quicksight_iac.glue_stack import GlueStack
 from quicksight_iac.subdomains_stack import SubdomainsStack
 from quicksight_iac.api_gateway import ApiGatewayStack
@@ -46,15 +47,17 @@ api_gateway_stack = ApiGatewayStack(
     apigw_domain_name=subdomains_stack.apigw_domain_name,
 )
 
-GlueStack(
+glue_stack = GlueStack(app, "quicksight-glue", env=environment)
+
+AthenaCustomerStack(
     app,
-    "quicksight-glue",
-    env=environment
+    "development-org-crawler-stack",
+    customer_org_name="development",
+    datalake_bucket_name=glue_stack.etl_output_bucket.bucket_name,
+    env=environment,
 )
 
 app.synth()
-
-
 
 
 # static_site_stack = S3StaticSiteStack(
